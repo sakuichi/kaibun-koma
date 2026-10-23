@@ -1,0 +1,10 @@
+{
+  "name": "kaibun-koma",
+  "version": "1.0.0",
+  "private": true,
+  "description": "回文ケンカゴマ: 回文の文字が並んだコマを回して、挑戦リンクの相手とぶつけ合うサイト",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node --test \"test/*.test.js\""
+  }
+}
