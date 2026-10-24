@@ -1546,17 +1546,18 @@ const BT = (() => {
   }
 
   // 広告（Amazonアソシエイト）。ネタサイトなので、結果に合わせてギャグに振った商品を出す。ブランド名は出さない
-  // ※商品と一言はユーザーの確認待ち
   const AMAZON_TAG = '202610jokesite-22';
   function adFor() {
     const ad = (copy, q, label) => [copy, q, 'Amazonで' + label + 'を見る'];
     if (!run || !run.announced) return ad('回文を考えすぎて頭が回らないときに。', 'ラムネ ブドウ糖', 'ラムネ');
-    const r = run.res, sec = r.decideFrame * BT.DT;
+    const r = run.res, score = run.mine.j.score;
     if (run.mine.j.kind === '手抜き') return ad('手抜きの回文には、手抜きの晩ごはんを。', 'カップラーメン', 'カップラーメン');
+    // ひとり回しは回文の点数で選ぶ
     if (run.solo) {
-      if (sec >= 30) return ad('そんなに回るなら、発電できそう。', '手回し 発電機', '手回し発電機');
-      if (sec < 10) return ad('すぐ倒れるあなたに、体幹を。', 'バランスボール', 'バランスボール');
-      return ad('回したりない夜に。', 'ハンドスピナー', 'ハンドスピナー');
+      if (score >= 80) return ad('その回文力、もはや文豪。', '原稿用紙', '原稿用紙');
+      if (score >= 65) return ad('いい回文。額に入れて飾ろう。', '色紙', '色紙');
+      if (score >= 45) return ad('あと一歩で名作。先人に学ぼう。', '回文 本', '回文の本');
+      return ad('もっと頭を回そう。', '知恵の輪', '知恵の輪');
     }
     if (r.winner === -1) return ad('仲良く止まった二人に。', 'ペア マグカップ', 'ペアマグカップ');
     if (r.winner === 0) return r.kimarite === '場外' ? ad('その腕なら、もっと遠くまで飛ばせる。', '竹とんぼ', '竹とんぼ') : ad('勝利の舞は、本物のケンカゴマで。', '喧嘩独楽', '喧嘩独楽');
