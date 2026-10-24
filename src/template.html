@@ -932,6 +932,11 @@ button,input,textarea{font:inherit;color:inherit}
     bgmTimer = null;
     if (AC && bgmGate) { const t = AC.currentTime; bgmGate.gain.cancelScheduledValues(t); bgmGate.gain.setTargetAtTime(0, t, fade); }
   }
+  // タブを裏に回したら音ごと止める（描画も止まるので、BGMやうなりだけが鳴り続けないように）。表に戻ったら続きから鳴らす
+  document.addEventListener('visibilitychange', () => {
+    if (!AC) return;
+    if (document.hidden) AC.suspend().catch(() => {}); else AC.resume().catch(() => {});
+  });
   function setSound(v) {
     soundOn = v; $('snd').textContent = v ? '音 オン' : '音 オフ'; $('snd').setAttribute('aria-pressed', String(v));
     if (spk) spk.gain.value = v ? 1 : 0;
