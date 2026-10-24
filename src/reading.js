@@ -101,24 +101,26 @@ const RD = (() => {
   function checkReading(text, yomi) {
     const y = kanaOnly(yomi || ''), n = y.length;
     const runs = text.normalize('NFKC').match(/[㐀-鿿々ヶ〆0-9A-Za-z]+|[ぁ-ゖァ-ヺー]+/g) || [];
-    const parts = runs.map(r => isKanaRun(r) ? toHira(r) : null); // null は読みを当てるかたまり
+    // かなのかたまりは文字そのもの。それ以外は読みを当てるかたまりで、読みの長さの上限は漢字1文字につき6かな、英字・数字1文字につき4かな
+    // （漢字1文字に長い回文の読みを付けて、表示と無関係な強いコマを作るズルの防止）
+    const parts = runs.map(r => isKanaRun(r) ? toHira(r) : { max: [...r].reduce((a, c) => a + (/[0-9A-Za-z]/.test(c) ? 4 : 6), 0) });
     // かたまりを前から順に当てはめ、読みの何文字目まで進めるかを表で埋める
     // （正規表現の後戻りに頼ると、一致しないときに時間が指数的に増えてページが固まる）
-    const fits = minLen => {
+    const fits = (minLen, limit) => {
       let reach = new Uint8Array(n + 1); reach[0] = 1;
       for (const p of parts) {
         const next = new Uint8Array(n + 1);
         for (let i = 0; i <= n; i++) {
           if (!reach[i]) continue;
-          if (p !== null) { if (y.startsWith(p, i)) next[i + p.length] = 1; }
-          else for (let e = i + minLen; e <= n; e++) next[e] = 1;
+          if (typeof p === 'string') { if (y.startsWith(p, i)) next[i + p.length] = 1; }
+          else for (let e = i + minLen, end = Math.min(n, limit ? i + p.max : n); e <= end; e++) next[e] = 1;
         }
         reach = next;
       }
       return reach[n] === 1;
     };
-    if (fits(1)) return { ok: true, yomi: y, reason: null };
-    return { ok: false, yomi: y, reason: fits(0) ? 'empty' : 'kana' };
+    if (fits(1, true)) return { ok: true, yomi: y, reason: null };
+    return { ok: false, yomi: y, reason: !fits(0, false) ? 'kana' : !fits(1, false) ? 'empty' : 'long' };
   }
 
   return { setDict, tokenize, autoReading, checkReading, toHira };

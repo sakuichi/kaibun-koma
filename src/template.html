@@ -14,6 +14,7 @@
 <meta property="og:image" content="https://sakuichi.github.io/kaibun-koma/ogp.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="回文ケンカゴマ。ネオンのスタジアムで「しんぶんし」と「トマト」のコマが「ギュイイイイン!!!」と火花を散らしてぶつかり合う。キミだけの回文でバトルせよ！">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://sakuichi.github.io/kaibun-koma/ogp.png">
 <meta name="theme-color" content="#070a12">
@@ -138,7 +139,7 @@ button,input,textarea{font:inherit;color:inherit}
     <small>あなたの回文を入れて「勝負！」を押してください。</small>
   </section>
 
-  <div class="stagebox">
+  <div class="stagebox" id="stagebox">
     <canvas id="stage" aria-label="スタジアム"></canvas>
     <div class="stagebar">
       <button class="chip" id="ff" type="button" hidden>早送り ×1</button>
@@ -436,7 +437,7 @@ button,input,textarea{font:inherit;color:inherit}
     if (typed && typed !== auto.yomi) {
       const chk = RD.checkReading(text, typed);
       if (chk.ok) yomi = chk.yomi;
-      else warn = chk.reason === 'empty' ? '漢字の部分の読みが空になっています。' : 'かなの部分は変えられません（漢字の読みだけ直せます）。';
+      else warn = chk.reason === 'empty' ? '漢字の部分の読みが空になっています。' : chk.reason === 'long' ? '読みが長すぎます（漢字1文字につき6文字、英字・数字1文字につき4文字まで）。' : 'かなの部分は変えられません（漢字の読みだけ直せます）。';
     }
     const j = KB.judge(yomi, text), s = KB.stats(j);
     const fixed = yomi !== auto.yomi;
@@ -610,23 +611,22 @@ button,input,textarea{font:inherit;color:inherit}
   }
 
   /* ---------- 音（ブラウザ組み込みの音声合成。消音にしても録画用の出力には流れる） ---------- */
-  // 金属の打撃は、金属の板や鐘に近い倍音の比率で合成し、軽いひずみと会場の残響を足す
+  // チェーンソーやドリルの回転音と、金属どうしがこすれる音を目指す：
+  // 回転はエンジンの細かい爆発（ブルルル）にドリルの甲高い音を重ね、激突は重い衝撃のあとに「ギャリギャリ」とこすれる
   let AC = null, bus = null, wet = null, grit = null, spk = null, recDest = null, soundOn = true, noiseBuf = null;
   try { soundOn = localStorage.getItem('kaibunkoma-sound') !== '0'; } catch (e) {}
+  const shaper = k => { const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } return c; };
   function initAudio() {
     if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
-      const lim = AC.createDynamicsCompressor(); lim.threshold.value = -12; lim.ratio.value = 12; lim.attack.value = 0.003; lim.release.value = 0.15;
-      bus = AC.createGain(); bus.gain.value = 0.7; bus.connect(lim);
+      const lim = AC.createDynamicsCompressor(); lim.threshold.value = -14; lim.ratio.value = 12; lim.attack.value = 0.003; lim.release.value = 0.2;
+      bus = AC.createGain(); bus.gain.value = 0.56; bus.connect(lim); // 全体の音量
       // 会場の響き：減衰するノイズで作った残響
-      const rev = AC.createConvolver(), len = Math.round(AC.sampleRate * 1.6), ir = AC.createBuffer(2, len, AC.sampleRate);
-      for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+      const rev = AC.createConvolver(), len = Math.round(AC.sampleRate * 1.8), ir = AC.createBuffer(2, len, AC.sampleRate);
+      for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let lp = 0; for (let i = 0; i < len; i++) { lp += ((Math.random() * 2 - 1) - lp) * 0.5; d[i] = lp * Math.pow(1 - i / len, 2.5); } }
       rev.buffer = ir; wet = AC.createGain(); wet.gain.value = 0.35; wet.connect(rev); rev.connect(lim);
-      // 金属のざらつき：軽くひずませてから流す
-      grit = AC.createWaveShaper(); const curve = new Float32Array(1024);
-      for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(4 * x) / Math.tanh(4); }
-      grit.curve = curve; grit.connect(bus); grit.connect(wet);
+      grit = AC.createWaveShaper(); grit.curve = shaper(6); grit.connect(bus); grit.connect(wet);
       spk = AC.createGain(); spk.gain.value = soundOn ? 1 : 0; lim.connect(spk); spk.connect(AC.destination);
       try { recDest = AC.createMediaStreamDestination(); lim.connect(recDest); } catch (e) { recDest = null; }
       noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
@@ -638,90 +638,151 @@ button,input,textarea{font:inherit;color:inherit}
   function env(gain, t0, peak, attack, decay) {
     gain.gain.setValueAtTime(0.0001, t0); gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + attack); gain.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
   }
-  function tone(type, f0, f1, peak, decay, delay = 0, reverb = 0.2) {
+  function tone(type, f0, f1, peak, decay, delay = 0, reverb = 0.25) {
     if (!AC) return;
     const t0 = AC.currentTime + delay, o = AC.createOscillator(), gn = AC.createGain();
     o.type = type; o.frequency.setValueAtTime(f0, t0); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0 + decay);
     env(gn, t0, peak, 0.005, decay); o.connect(gn); send(gn, reverb); o.start(t0); o.stop(t0 + decay + 0.05);
   }
-  function noise(filterType, f0, f1, peak, decay, delay = 0, q = 1.2, reverb = 0.2) {
+  function noise(filterType, f0, f1, peak, decay, delay = 0, q = 1.2, reverb = 0.25) {
     if (!AC) return;
     const t0 = AC.currentTime + delay, s = AC.createBufferSource(), fl = AC.createBiquadFilter(), gn = AC.createGain();
     s.buffer = noiseBuf; s.loop = true; fl.type = filterType; fl.Q.value = q;
     fl.frequency.setValueAtTime(f0, t0); fl.frequency.exponentialRampToValueAtTime(f1, t0 + decay);
     env(gn, t0, peak, 0.004, decay); s.connect(fl); fl.connect(gn); send(gn, reverb); s.start(t0); s.stop(t0 + decay + 0.05);
   }
-  // 金属の打撃「ガキン」：金属の板に近い、整数倍でない倍音を重ねる。高い倍音ほど早く消える
-  const METAL = [[1, 1], [2.76, 0.75], [5.4, 0.55], [8.93, 0.4], [13.34, 0.28], [18.64, 0.18]];
+  // 重い金属の打撃「ゴン」（短め）
+  const METAL = [[0.5, 0.7], [1, 1], [1.59, 0.8], [2.76, 0.6], [3.9, 0.45], [5.4, 0.3]];
   function clang(f0, peak, decay, delay = 0) {
     if (!AC) return;
     const t0 = AC.currentTime + delay, mix = AC.createGain(); mix.gain.value = 1; mix.connect(grit);
     METAL.forEach(([r, a], i) => {
-      const o = AC.createOscillator(), gn = AC.createGain(), f = f0 * r * (0.985 + Math.random() * 0.03);
-      if (f > 16000) return;
-      o.type = 'sine'; o.frequency.setValueAtTime(f, t0);
-      env(gn, t0, peak * a * 0.5, 0.002, decay / (1 + i * 0.45)); o.connect(gn); gn.connect(mix); o.start(t0); o.stop(t0 + decay + 0.1);
+      const o = AC.createOscillator(), gn = AC.createGain();
+      o.type = i < 2 ? 'triangle' : 'sine'; o.frequency.setValueAtTime(f0 * r * (0.985 + Math.random() * 0.03), t0);
+      env(gn, t0, peak * a * 0.45, 0.002, decay / (1 + i * 0.3)); o.connect(gn); gn.connect(mix); o.start(t0); o.stop(t0 + decay + 0.1);
     });
-    noise('bandpass', f0 * 7, f0 * 4, peak * 0.6, 0.04, delay, 6, 0.3); // 当たった瞬間の「カッ」
   }
-  // 「ギュイーン」：倍音の多い音を、共鳴するフィルターに通して音程を上下させる
-  function whine(f0, f1, dur, peak, delay = 0) {
+  // 金属どうしがこすれる「ギャリギャリ」：高い帯域のノイズを細かく途切れさせ、キーッという軋みを重ねる
+  function grind(dur, peak, pitch, delay = 0) {
     if (!AC) return;
-    const t0 = AC.currentTime + delay, gn = AC.createGain(), fl = AC.createBiquadFilter(), lfo = AC.createOscillator(), lfoGain = AC.createGain();
-    fl.type = 'bandpass'; fl.Q.value = 7; fl.frequency.setValueAtTime(f0 * 2, t0); fl.frequency.exponentialRampToValueAtTime(f1 * 2, t0 + dur);
-    lfo.frequency.value = 28; lfoGain.gain.value = f0 * 0.03; lfo.connect(lfoGain);
-    for (const [type, mul] of [['sawtooth', 1], ['square', 1.5]]) {
-      const o = AC.createOscillator(); o.type = type;
-      o.frequency.setValueAtTime(f0 * mul, t0); o.frequency.exponentialRampToValueAtTime(f1 * mul, t0 + dur);
-      lfoGain.connect(o.frequency); o.connect(fl); o.start(t0); o.stop(t0 + dur + 0.1);
-    }
-    gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(peak, t0 + 0.06); gn.gain.setValueAtTime(peak, t0 + dur * 0.7); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    fl.connect(gn); send(gn, 0.35); lfo.start(t0); lfo.stop(t0 + dur + 0.1);
+    const t0 = AC.currentTime + delay, s = AC.createBufferSource(), bp = AC.createBiquadFilter(), am = AC.createGain(), gn = AC.createGain();
+    const chop = AC.createOscillator(), chopGain = AC.createGain();
+    s.buffer = noiseBuf; s.loop = true; bp.type = 'bandpass'; bp.Q.value = 2.5;
+    bp.frequency.setValueAtTime(pitch * 1.6, t0); bp.frequency.linearRampToValueAtTime(pitch * 1.1, t0 + dur);
+    chop.type = 'square'; chop.frequency.setValueAtTime(90 + Math.random() * 60, t0); chop.frequency.linearRampToValueAtTime(40, t0 + dur);
+    chop.connect(chopGain); chopGain.gain.value = 0.5; chopGain.connect(am.gain); am.gain.value = 0.5;
+    s.connect(bp); bp.connect(am); am.connect(gn);
+    gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(peak, t0 + 0.015); gn.gain.setValueAtTime(peak, t0 + dur * 0.4); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    gn.connect(grit); s.start(t0); s.stop(t0 + dur + 0.05); chop.start(t0); chop.stop(t0 + dur + 0.05);
+    // 軋み：揺れながら少し下がる高い音
+    const sq = AC.createOscillator(), vib = AC.createOscillator(), vibGain = AC.createGain(), sg = AC.createGain();
+    sq.type = 'sawtooth'; sq.frequency.setValueAtTime(pitch, t0); sq.frequency.linearRampToValueAtTime(pitch * 0.85, t0 + dur);
+    vib.frequency.value = 11; vibGain.gain.value = pitch * 0.025; vib.connect(vibGain); vibGain.connect(sq.frequency);
+    const sbp = AC.createBiquadFilter(); sbp.type = 'bandpass'; sbp.Q.value = 12; sbp.frequency.value = pitch;
+    sq.connect(sbp); sbp.connect(sg); env(sg, t0, peak * 0.5, 0.02, dur); send(sg, 0.3);
+    sq.start(t0); sq.stop(t0 + dur + 0.05); vib.start(t0); vib.stop(t0 + dur + 0.05);
+  }
+  // エンジン音（チェーンソーのブルルル）＋ドリルの甲高い音。f は回転の高さ、firing はエンジンの爆発の細かさ
+  function engineVoice() {
+    const saw = AC.createOscillator(), sq = AC.createOscillator(), fire = AC.createOscillator(), fireGain = AC.createGain(), am = AC.createGain();
+    const ws = AC.createWaveShaper(), lp = AC.createBiquadFilter(), drill = AC.createOscillator(), dbp = AC.createBiquadFilter(), dg = AC.createGain(), gn = AC.createGain();
+    saw.type = 'sawtooth'; sq.type = 'square'; fire.type = 'square'; drill.type = 'sawtooth';
+    saw.connect(am); sq.connect(am); fire.connect(fireGain); fireGain.gain.value = 0.55; fireGain.connect(am.gain); am.gain.value = 0.5;
+    ws.curve = shaper(9); lp.type = 'lowpass'; lp.Q.value = 1.5; am.connect(ws); ws.connect(lp); lp.connect(gn);
+    dbp.type = 'bandpass'; dbp.Q.value = 10; drill.connect(dbp); dbp.connect(dg); dg.connect(gn);
+    gn.gain.value = 0; send(gn, 0.2);
+    for (const o of [saw, sq, fire, drill]) o.start();
+    return { saw, sq, fire, lp, drill, dbp, dg, gn,
+      set(f, level, t, tc = 0.05) {
+        saw.frequency.setTargetAtTime(f, t, tc); sq.frequency.setTargetAtTime(f * 2.01, t, tc);
+        fire.frequency.setTargetAtTime(Math.max(6, f * 0.32), t, tc); lp.frequency.setTargetAtTime(900 + f * 14, t, tc);
+        drill.frequency.setTargetAtTime(f * 6, t, tc); dbp.frequency.setTargetAtTime(f * 18, t, tc);
+        dg.gain.setTargetAtTime(Math.min(0.5, f / 400), t, tc); gn.gain.setTargetAtTime(level, t, tc);
+      },
+      stop(t) { for (const o of [saw, sq, fire, drill]) o.stop(t); } };
+  }
+  // エンジンを回し上げる／落とす（投げ入れ・場外・倒れる）
+  function rev(f0, f1, dur, peak, delay = 0) {
+    if (!AC) return;
+    const t0 = AC.currentTime + delay, v = engineVoice();
+    v.set(f0, 0.0001, t0, 0.01); v.set(f0, peak, t0, 0.03);
+    v.saw.frequency.setTargetAtTime(f1, t0 + 0.05, dur / 3); v.sq.frequency.setTargetAtTime(f1 * 2.01, t0 + 0.05, dur / 3);
+    v.fire.frequency.setTargetAtTime(Math.max(6, f1 * 0.32), t0 + 0.05, dur / 3); v.lp.frequency.setTargetAtTime(900 + f1 * 14, t0 + 0.05, dur / 3);
+    v.drill.frequency.setTargetAtTime(f1 * 6, t0 + 0.05, dur / 3); v.dbp.frequency.setTargetAtTime(f1 * 18, t0 + 0.05, dur / 3);
+    v.gn.gain.setTargetAtTime(0.0001, t0 + dur * 0.75, dur / 8); v.stop(t0 + dur + 0.3);
   }
   const sfx = {
-    // 投げ入れ：回転が上がっていく「ギュイーン」
-    launch() { whine(180, 1500, 0.75, 0.35); noise('bandpass', 600, 3000, 0.25, 0.5); },
-    // 激突：「ガキンガキン」の2連打。強いほど低く長く鳴る。最初の激突は重い衝撃と、こすれる「ギャリッ」も足す
+    // 投げ入れ：エンジンを一気に吹かす「ブィィィィン」と、上がっていく「キュイーン」
+    launch() { rev(55, 210, 0.9, 0.22); whineUp(300, 950, 0.9, 0.12); noise('lowpass', 300, 1500, 0.2, 0.5); },
+    // 激突：高い金属音「ガキン」のあと「ギャリギャリ」とこすれる。強いほど長く大きくこすれる。最初の激突は特に長い
+    // 激突：「ギャリギャリ」とこすれる。叩いて鳴り響く金属音は使わない。強いほど長く大きくこすれ、最初の激突は特に長く、低い衝撃も足す
     clash(p, first) {
-      const f0 = 480 + Math.random() * 260, v = 0.45 + 0.55 * p, d = 0.45 + 0.7 * p;
-      clang(f0, v, d);
-      if (first || p > 0.35) clang(f0 * (1.08 + Math.random() * 0.1), v * 0.8, d * 0.8, 0.07 + Math.random() * 0.03);
-      if (first || p > 0.6) noise('bandpass', 5200, 2500, 0.35 * v, 0.22, 0.02, 3, 0.3);
-      if (first) { tone('sine', 110, 34, 1, 0.6, 0, 0.4); noise('lowpass', 1200, 120, 0.6, 0.5, 0, 1, 0.5); }
+      grind(first ? 1 : 0.22 + 0.5 * p, (first ? 0.5 : 0.22 + 0.3 * p), 2600 + Math.random() * 1200, 0.03);
+      if (first) tone('sine', 140, 60, 0.45, 0.18, 0, 0.2);
     },
-    // 縁に当たる：高く短い「キン」
-    rim(p) { clang(1050 + Math.random() * 350, 0.2 + 0.35 * p, 0.22 + 0.2 * p); },
-    // 場外：回転が抜けていく「ギュイーン↓」と、外で鳴る金属音と衝撃
-    out() { whine(1500, 160, 0.9, 0.3); clang(380, 0.7, 1.1, 0.35); tone('sine', 90, 30, 0.9, 0.7, 0.35, 0.5); },
-    // 倒れる：小さな金属音が続く「カラカラ」
-    fall() { let t = 0; for (let i = 0; i < 6; i++) { clang(900 + Math.random() * 500, 0.32 * (1 - i / 7), 0.14, t); t += 0.1 * Math.pow(0.78, i); } },
-    ready() { clang(1320, 0.3, 0.5); },
-    go() { whine(400, 1800, 0.4, 0.25); clang(880, 0.6, 0.9); tone('sine', 120, 40, 0.8, 0.45, 0, 0.4); },
-    vs() { tone('sine', 140, 32, 1, 0.8, 0, 0.5); noise('highpass', 6000, 9000, 0.35, 1.3, 0, 0.7, 0.6); clang(290, 0.7, 1.4); },
-    // 勝ち：明るい金属の和音を駆け上がる。負け：下がっていく
-    win() { [523, 659, 784, 1047].forEach((f, i) => { tone('sawtooth', f, f, 0.12, i === 3 ? 0.9 : 0.2, i * 0.11, 0.4); clang(f * 2, 0.18, i === 3 ? 1 : 0.3, i * 0.11); }); },
-    lose() { [392, 330, 262].forEach((f, i) => tone('triangle', f, f * 0.97, 0.3, i === 2 ? 0.7 : 0.25, i * 0.22, 0.4)); }
+    // 縁に当たる：短くこすれる
+    rim(p) { grind(0.12 + 0.2 * p, 0.15 + 0.25 * p, 3200 + Math.random() * 800); },
+    // 場外：エンジンが空回りして抜けていく音と、外で鳴る衝撃
+    out() { rev(220, 60, 1.1, 0.28); tone('sine', 90, 30, 0.9, 0.7, 0.35, 0.5); clang(140, 0.6, 0.6, 0.35); },
+    // 止まる：短く高い「カチン」
+    fall() { clang(2000 + Math.random() * 400, 0.4, 0.14); clang(2700, 0.18, 0.08, 0.05); },
+    // レディー：高い「チン」
+    ready() { clang(1560, 0.35, 0.4); },
+    // ファイト／ゴー：ゴング「カーン」とエンジン全開
+    go() { clang(1040, 0.6, 1.3); clang(1560, 0.25, 0.9); rev(80, 240, 0.55, 0.2); },
+    // VS：高く澄んだゴング「カーン」
+    vs() { clang(780, 0.7, 1.8); clang(1170, 0.3, 1.2); tone('sine', 120, 60, 0.35, 0.3, 0, 0.4); },
+    // 勝ち：金管風のファンファーレ「パパパ・パーン」と、締めの和音
+    win() {
+      [[392, 330, 0, 0.11], [392, 330, 0.13, 0.11], [392, 330, 0.26, 0.11], [523, 392, 0.4, 0.95]].forEach(([hi, lo, dt, dur]) => { brass(hi, dt, dur, 0.13); brass(lo, dt, dur, 0.09); });
+      brass(262, 0.4, 0.95, 0.08); noise('highpass', 6000, 9000, 0.22, 1.2, 0.4, 0.7, 0.6); clang(1568, 0.25, 1.2, 0.4);
+    },
+    // 負け：音程が下がっていく「ぽわわわ〜ん」（しょんぼりしたトロンボーン）。金属音は使わない（激突と聞き分けやすく）
+    lose() { [[233, 0, 0.32], [220, 0.36, 0.32], [208, 0.72, 0.32], [196, 1.08, 1.1]].forEach(([f, dt, dur], i) => brass(f, dt, dur, 0.16, i === 3)); }
   };
-  // 回転のうなり（コマごと）：金属的な「ギュイーン」。周波数変調で金属らしい濁りを出し、回転の速さで細かく震わせる
+  // 金管風の音：のこぎり波を2つ少しずらして重ね、吹き始めにフィルターを開く。wobble で最後の音を揺らす
+  function brass(f, delay, dur, peak, wobble) {
+    if (!AC) return;
+    const t0 = AC.currentTime + delay, fl = AC.createBiquadFilter(), gn = AC.createGain();
+    fl.type = 'lowpass'; fl.Q.value = 3; fl.frequency.setValueAtTime(f * 1.5, t0); fl.frequency.exponentialRampToValueAtTime(f * 6, t0 + 0.06); fl.frequency.exponentialRampToValueAtTime(f * 3, t0 + dur);
+    gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(peak, t0 + 0.03); gn.gain.setValueAtTime(peak, t0 + dur * 0.8); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.08);
+    for (const det of [0.997, 1.003]) {
+      const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f * det, t0);
+      if (wobble) { const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.frequency.value = 6; lg.gain.value = f * 0.03; lfo.connect(lg); lg.connect(o.frequency); lfo.start(t0); lfo.stop(t0 + dur + 0.1); }
+      o.connect(fl); o.start(t0); o.stop(t0 + dur + 0.1);
+    }
+    fl.connect(gn); send(gn, 0.4);
+  }
+  // 高い電動の回転音「キュイイン／チュイイン」：倍音の多い音を高い帯域で共鳴させ、細かく揺らしてチュイチュイと途切れさせる
+  function whineVoice() {
+    const saw = AC.createOscillator(), sine = AC.createOscillator(), vib = AC.createOscillator(), vibGain = AC.createGain();
+    const chat = AC.createOscillator(), chatGain = AC.createGain(), am = AC.createGain(), bp = AC.createBiquadFilter(), gn = AC.createGain();
+    saw.type = 'sawtooth'; sine.type = 'sine'; chat.type = 'square'; bp.type = 'bandpass'; bp.Q.value = 6;
+    vib.frequency.value = 7; vib.connect(vibGain); vibGain.connect(saw.frequency); vibGain.connect(sine.frequency);
+    chat.connect(chatGain); chatGain.gain.value = 0.18; chatGain.connect(am.gain); am.gain.value = 0.8;
+    saw.connect(bp); bp.connect(am); sine.connect(am); am.connect(gn); gn.gain.value = 0; send(gn, 0.25);
+    for (const o of [saw, sine, vib, chat]) o.start();
+    return { saw, sine, vibGain, chat, bp, gn,
+      set(f, level, t, tc = 0.05) {
+        saw.frequency.setTargetAtTime(f, t, tc); sine.frequency.setTargetAtTime(f * 4, t, tc); vibGain.gain.setTargetAtTime(f * 0.012, t, tc);
+        bp.frequency.setTargetAtTime(f * 4, t, tc); chat.frequency.setTargetAtTime(6 + f * 0.04, t, tc); gn.gain.setTargetAtTime(level, t, tc);
+      },
+      stop(t) { for (const o of [saw, sine, chat]) o.stop(t); } };
+  }
+  // 「キュイーン」と音程が上がる（投げ入れで使う）
+  function whineUp(f0, f1, dur, peak, delay = 0) {
+    if (!AC) return;
+    const t0 = AC.currentTime + delay, v = whineVoice();
+    v.set(f0, 0.0001, t0, 0.01); v.set(f0, peak, t0, 0.03);
+    v.saw.frequency.setTargetAtTime(f1, t0 + 0.03, dur / 3); v.sine.frequency.setTargetAtTime(f1 * 4, t0 + 0.03, dur / 3); v.bp.frequency.setTargetAtTime(f1 * 4, t0 + 0.03, dur / 3);
+    v.gn.gain.setTargetAtTime(0.0001, t0 + dur * 0.8, dur / 8); v.stop(t0 + dur + 0.3);
+  }
+  // 回転のうなり（コマごと）：高い「キュイイン」。回転が速いほど高くなる
   const hums = [];
   function humSet(k, w) {
     if (!AC) return;
-    let h = hums[k];
-    if (!h) {
-      const car = AC.createOscillator(), mod = AC.createOscillator(), modGain = AC.createGain(), saw = AC.createOscillator(), bp = AC.createBiquadFilter();
-      const trem = AC.createOscillator(), tremGain = AC.createGain(), amp = AC.createGain(), gn = AC.createGain();
-      car.type = 'sine'; mod.type = 'sine'; saw.type = 'sawtooth'; bp.type = 'bandpass'; bp.Q.value = 9;
-      mod.connect(modGain); modGain.connect(car.frequency); car.connect(amp); saw.connect(bp); bp.connect(amp);
-      trem.connect(tremGain); tremGain.connect(amp.gain); amp.gain.value = 0.6; tremGain.gain.value = 0.35;
-      amp.connect(gn); gn.gain.value = 0; send(gn, 0.25);
-      for (const o of [car, mod, saw, trem]) o.start();
-      h = hums[k] = { car, mod, modGain, saw, bp, trem, gn };
-    }
-    const t = AC.currentTime, fc = 240 + 760 * w + k * 23;
-    h.car.frequency.setTargetAtTime(fc, t, 0.05); h.mod.frequency.setTargetAtTime(fc * 1.414, t, 0.05); h.modGain.gain.setTargetAtTime(fc * 0.7 * w, t, 0.05);
-    h.saw.frequency.setTargetAtTime(fc * 0.5, t, 0.05); h.bp.frequency.setTargetAtTime(fc * 2.2, t, 0.05);
-    h.trem.frequency.setTargetAtTime(5 + 22 * w, t, 0.1);
-    h.gn.gain.setTargetAtTime(w > 0.02 ? 0.035 + 0.075 * w : 0, t, 0.08);
+    if (!hums[k]) hums[k] = whineVoice();
+    hums[k].set(260 + 640 * w + k * 23, w > 0.02 ? 0.03 + 0.055 * w : 0, AC.currentTime);
   }
   function humStop() { for (const h of hums) if (h && AC) h.gn.gain.setTargetAtTime(0, AC.currentTime, 0.1); }
   function setSound(v) {
@@ -810,8 +871,13 @@ button,input,textarea{font:inherit;color:inherit}
     // ゲージ中に入力欄を書き換えても、ゲージを出したときの回文で投げる（回せる条件を確かめたもの）
     mode = 'aim'; aim = { t0: performance.now(), solo, text: $('text').value, yomi: $('yomi').value };
     $('ff').hidden = true; $('result').hidden = true;
-    $('gauge').hidden = false; $('throw').focus({ preventScroll: true });
+    $('gauge').hidden = false; showStage(); $('throw').focus({ preventScroll: true });
     $('status').textContent = solo ? 'ゲージが真ん中に来たところで投げて回す！' : 'ゲージが真ん中に来たところで投げる！';
+  }
+  // 投げる前にスタジアムを画面の上に出す（スマホでは「勝負！」がスタジアムから離れているので、ゲージと投げるボタンごと見えるようにする）。入力中のキーボードも閉じる
+  function showStage() {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    $('stagebox').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
   }
   function gaugeValue() { const u = ((performance.now() - aim.t0) / 1000 * GAUGE_SPEED) % 2; return u < 1 ? u : 2 - u; }
   function throwNow() {
@@ -1101,13 +1167,22 @@ button,input,textarea{font:inherit;color:inherit}
     if (await saveBlob(recBlob, 'kaibun-koma.' + (recBlob.type.indexOf('mp4') >= 0 ? 'mp4' : 'webm'), postText())) $('sharemsg').textContent = '動画を書き出しました。';
   }
 
-  // 広告（Amazonアソシエイト）。※リンクする商品は仮。ユーザーと相談して決める
+  // 広告（Amazonアソシエイト）。ネタサイトなので、結果に合わせてギャグに振った商品を出す。ブランド名は出さない
+  // ※商品と一言はユーザーの確認待ち
   const AMAZON_TAG = '202610jokesite-22';
   function adFor() {
-    if (!run || !run.announced) return ['机の上でも、本物を回してみる。', 'ベイブレードX', 'Amazonでベイブレードを見る'];
-    if (run.solo) return ['机の上でも、本物を回してみる。', 'ベイブレードX', 'Amazonでベイブレードを見る'];
-    if (run.res.winner === 0) return ['次はリアルのスタジアムで勝負。', 'ベイブレードX スタジアム', 'Amazonでスタジアムを見る'];
-    return ['強い回文を作るなら、まず読んで修行。', '回文 本', 'Amazonで回文の本を見る'];
+    const ad = (copy, q, label) => [copy, q, 'Amazonで' + label + 'を見る'];
+    if (!run || !run.announced) return ad('回文を考えすぎて頭が回らないときに。', 'ラムネ ブドウ糖', 'ラムネ');
+    const r = run.res, sec = r.decideFrame * BT.DT;
+    if (run.mine.j.kind === '手抜き') return ad('手抜きの回文には、手抜きの晩ごはんを。', 'カップラーメン', 'カップラーメン');
+    if (run.solo) {
+      if (sec >= 30) return ad('そんなに回るなら、発電できそう。', '手回し 発電機', '手回し発電機');
+      if (sec < 10) return ad('すぐ倒れるあなたに、体幹を。', 'バランスボール', 'バランスボール');
+      return ad('回したりない夜に。', 'ハンドスピナー', 'ハンドスピナー');
+    }
+    if (r.winner === -1) return ad('仲良く止まった二人に。', 'ペア マグカップ', 'ペアマグカップ');
+    if (r.winner === 0) return r.kimarite === '場外' ? ad('その腕なら、もっと遠くまで飛ばせる。', '竹とんぼ', '竹とんぼ') : ad('勝利の舞は、本物のケンカゴマで。', '喧嘩独楽', '喧嘩独楽');
+    return r.kimarite === '場外' ? ad('飛ばされたコマは、これで拾おう。', 'マジックハンド', 'マジックハンド') : ad('回転力が足りない？ 次はこれで回す。', '電動ドリル', '電動ドリル');
   }
   function renderAd() {
     const [copy, q, label] = adFor();
@@ -1128,7 +1203,7 @@ button,input,textarea{font:inherit;color:inherit}
   $('throw').addEventListener('click', throwNow);
   cv.addEventListener('pointerdown', throwNow);
   document.addEventListener('keydown', e => { if (e.code === 'Space' && mode === 'aim') { e.preventDefault(); throwNow(); } });
-  $('again').addEventListener('click', () => { if (last && canSpin(me)) { initAudio(); $('gauge').hidden = true; play(last); } });
+  $('again').addEventListener('click', () => { if (last && canSpin(me)) { initAudio(); $('gauge').hidden = true; showStage(); play(last); } });
   $('ff').addEventListener('click', () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; $('ff').textContent = '早送り ×' + speed; });
   $('snd').addEventListener('click', () => { initAudio(); setSound(!soundOn); });
   $('saveImg').addEventListener('click', saveImage);
