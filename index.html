@@ -1297,12 +1297,21 @@ const BT = (() => {
       },
     },
   ];
-  // 少し先の音まで予約しておく（タイマーの揺れで音がもたつかないように）
+  // ゲージ中（投げる前）：ドラムでビートを刻むだけ。テンポはバトル曲（210〜230）のどれに切り替わってもずれが小さい真ん中
+  const BGM_AIM = {
+    bpm: 220,
+    step(bar, s, t) {
+      if (s === 0 || s === 10) bKick(t);
+      if (s === 4 || s === 12) bSnare(t); else if (s === 7 || s === 15) bSnare(t, 0.25);
+      bHat(t, s % 2 === 0 ? 0.8 : 0.35, s === 14);
+    },
+  };
+  // 少し先の音まで予約しておく（タイマーの揺れで音がもたつかないように）。曲を指定しなければバトル曲から選ぶ
   let bgmTimer = null;
-  function bgmStart() {
+  function bgmStart(song = BGM_SONGS[Math.floor(Math.random() * BGM_SONGS.length)]) {
     if (!AC) return;
     bgmStop();
-    const song = BGM_SONGS[Math.floor(Math.random() * BGM_SONGS.length)], sd = 60 / song.bpm / 4, t0 = AC.currentTime;
+    const sd = 60 / song.bpm / 4, t0 = AC.currentTime;
     let next = t0 + 0.06, i = 0;
     bgmDly.delayTime.value = sd * 3;
     bgmGate.gain.setValueAtTime(BGM_VOL, next); // 前の曲の残りは消えてから上げる
@@ -1407,7 +1416,7 @@ const BT = (() => {
   // ひとり回しも勝負も、ゲージで投げてから始める
   function beginAim(solo) {
     if (!canSpin(me) || (!solo && !opp)) return;
-    initAudio(); recCancel(); humStop(); bgmStop();
+    initAudio(); recCancel(); humStop(); bgmStart(BGM_AIM);
     // ゲージ中に入力欄を書き換えても、ゲージを出したときの回文で投げる（回せる条件を確かめたもの）
     mode = 'aim'; aim = { t0: performance.now(), solo, text: $('text').value, yomi: $('yomi').value };
     $('ff').hidden = true; $('result').hidden = true;
