@@ -921,13 +921,31 @@ button,input,textarea{font:inherit;color:inherit}
       },
     },
   ];
-  // ゲージ中（投げる前）：ドラムでビートを刻むだけ。テンポはバトル曲（210〜230）のどれに切り替わってもずれが小さい真ん中
+  // ためを作る「シュワー」：ノイズの高さと音量が上がっていく
+  function bRiser(t, dur) {
+    const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+    s.buffer = noiseBuf; s.loop = true; f.type = 'bandpass'; f.Q.value = 2;
+    f.frequency.setValueAtTime(400, t); f.frequency.exponentialRampToValueAtTime(7000, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + dur); g.gain.setValueAtTime(0.0001, t + dur + 0.01);
+    s.connect(f); f.connect(g); bOut(g); s.start(t); s.stop(t + dur + 0.02);
+  }
+  // ゲージ中（投げる前）：2小節ふつうに刻んだあと、スネアがだんだん細かくなり「シュワー」と上がって、頭でシンバル。投げを待つ「ため」
+  // テンポはバトル曲（210〜230）のどれに切り替わってもずれが小さい真ん中
   const BGM_AIM = {
     bpm: 220,
-    step(bar, s, t) {
-      if (s === 0 || s === 10) bKick(t);
-      if (s === 4 || s === 12) bSnare(t); else if (s === 7 || s === 15) bSnare(t, 0.25);
-      bHat(t, s % 2 === 0 ? 0.8 : 0.35, s === 14);
+    step(bar, s, t, sd) {
+      if (bar === 0 && s === 0) bCrash(t);
+      if (bar < 2) {
+        if (s === 0 || s === 10) bKick(t);
+        if (s === 4 || s === 12) bSnare(t); else if (s === 7 || s === 15) bSnare(t, 0.25);
+        bHat(t, s % 2 === 0 ? 0.8 : 0.35);
+      } else {
+        if (s % 4 === 0) bKick(t);
+        const k = (bar - 2) * 16 + s; // 3小節目は8分、4小節目は16分でスネアを打ち、だんだん大きく
+        if (bar === 3 || s % 2 === 0) bSnare(t, 0.25 + 0.6 * k / 32);
+        if (s % 4 === 2) bHat(t, 0.8, true);
+        if (bar === 2 && s === 0) bRiser(t, sd * 32);
+      }
     },
   };
   // 少し先の音まで予約しておく（タイマーの揺れで音がもたつかないように）。曲を指定しなければバトル曲から選ぶ
