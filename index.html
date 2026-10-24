@@ -991,7 +991,7 @@ const BT = (() => {
   /* ---------- 音（ブラウザ組み込みの音声合成。消音にしても録画用の出力には流れる） ---------- */
   // チェーンソーやドリルの回転音と、金属どうしがこすれる音を目指す：
   // 回転はエンジンの細かい爆発（ブルルル）にドリルの甲高い音を重ね、激突は重い衝撃のあとに「ギャリギャリ」とこすれる
-  let AC = null, bus = null, wet = null, grit = null, spk = null, recDest = null, soundOn = true, noiseBuf = null;
+  let AC = null, bus = null, wet = null, grit = null, spk = null, recDest = null, soundOn = true, noiseBuf = null, bgmMix = null, bgmGate = null, bgmDly = null;
   try { soundOn = localStorage.getItem('kaibunkoma-sound') !== '0'; } catch (e) {}
   const shaper = k => { const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } return c; };
   function initAudio() {
@@ -1009,6 +1009,12 @@ const BT = (() => {
       try { recDest = AC.createMediaStreamDestination(); lim.connect(recDest); } catch (e) { recDest = null; }
       noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      // BGM：各楽器 → bgmMix → bgmGate（音量と、決着で下げる）→ 全体の音量。やまびこ（付点8分）は bgmMix に戻す
+      bgmGate = AC.createGain(); bgmGate.gain.value = 0; bgmGate.connect(bus);
+      const bs = AC.createGain(); bs.gain.value = 0.4; bgmGate.connect(bs); bs.connect(wet);
+      bgmMix = AC.createGain(); bgmMix.connect(bgmGate);
+      bgmDly = AC.createDelay(1); const fb = AC.createGain(), dw = AC.createGain(); fb.gain.value = 0.32; dw.gain.value = 0.22;
+      bgmDly.connect(fb); fb.connect(bgmDly); bgmDly.connect(dw); dw.connect(bgmMix);
     } catch (e) { AC = null; }
   }
   // 音の出口：そのままの音と、残響へ送る分
@@ -1163,6 +1169,147 @@ const BT = (() => {
     hums[k].set(260 + 640 * w + k * 23, w > 0.02 ? 0.03 + 0.055 * w : 0, AC.currentTime);
   }
   function humStop() { for (const h of hums) if (h && AC) h.gn.gain.setTargetAtTime(0, AC.currentTime, 0.1); }
+
+  /* ---------- BGM（合成。投げてから決着まで、3曲から毎回ランダムに流す。早送りしてもテンポは変えない） ---------- */
+  const BGM_VOL = 0.55;
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  function bOut(node, echo) { node.connect(bgmMix); if (echo) { const g = AC.createGain(); g.gain.value = echo; node.connect(g); g.connect(bgmDly); } }
+  function bOsc(type, m, det, t, dur, dest) { const o = AC.createOscillator(); o.type = type; o.frequency.value = mtof(m); o.detune.value = det; o.connect(dest); o.start(t); o.stop(t + dur); return o; }
+  function bKick(t) {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    env(g, t, 0.9, 0.002, 0.3); o.connect(g); bOut(g); o.start(t); o.stop(t + 0.35);
+  }
+  function bSnare(t, v = 1) {
+    const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+    s.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = 1900; f.Q.value = 0.7;
+    env(g, t, 0.5 * v, 0.002, 0.18); s.connect(f); f.connect(g); bOut(g); s.start(t); s.stop(t + 0.25);
+    const o = AC.createOscillator(), og = AC.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
+    env(og, t, 0.35 * v, 0.002, 0.09); o.connect(og); bOut(og); o.start(t); o.stop(t + 0.15);
+  }
+  function bHat(t, v = 1, open = false) {
+    const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+    s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = 7500;
+    env(g, t, 0.16 * v, 0.001, open ? 0.22 : 0.035); s.connect(f); f.connect(g); bOut(g); s.start(t); s.stop(t + 0.3);
+  }
+  function bCrash(t) {
+    const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+    s.buffer = noiseBuf; s.loop = true; f.type = 'highpass'; f.frequency.value = 4000;
+    env(g, t, 0.18, 0.002, 1.4); s.connect(f); f.connect(g); bOut(g); s.start(t); s.stop(t + 1.5);
+  }
+  // ベース：のこぎり波を低域だけ通す。reese なら2本をずらしてうねらせる
+  function bBass(t, m, dur, reese = false) {
+    const g = AC.createGain(), f = AC.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = reese ? 4 : 8;
+    f.frequency.setValueAtTime(reese ? 700 : 1600, t); f.frequency.exponentialRampToValueAtTime(reese ? 300 : 260, t + Math.min(dur, 0.25));
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.42, t + 0.005); g.gain.setValueAtTime(0.42, t + dur * 0.8); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    for (const det of reese ? [-14, 14] : [0]) bOsc('sawtooth', m, det, t, dur + 0.02, f);
+    f.connect(g); bOut(g);
+  }
+  // リード：少しずらした2本の音に、遅れてかかるビブラート
+  function bLead(t, m, dur, type = 'sawtooth', vol = 0.13) {
+    const g = AC.createGain(), f = AC.createBiquadFilter(), vib = AC.createOscillator(), vg = AC.createGain();
+    f.type = 'lowpass'; f.frequency.value = 4200; vib.frequency.value = 6; vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(dur > 0.25 ? 18 : 0, t + dur);
+    vib.connect(vg);
+    for (const det of [-8, 8]) vg.connect(bOsc(type, m, det, t, dur + 0.05, f).detune);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.setValueAtTime(vol, t + dur * 0.85); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.04);
+    f.connect(g); bOut(g, 0.6); vib.start(t); vib.stop(t + dur + 0.05);
+  }
+  // はじく音（アルペジオ）
+  function bPluck(t, m) {
+    const f = AC.createBiquadFilter(), g = AC.createGain();
+    f.type = 'lowpass'; f.frequency.setValueAtTime(4500, t); f.frequency.exponentialRampToValueAtTime(500, t + 0.15);
+    env(g, t, 0.09, 0.002, 0.16); bOsc('sawtooth', m, 0, t, 0.2, f); f.connect(g); bOut(g, 0.7);
+  }
+  // 和音を短く刻む
+  function bStab(t, ms, dur, vol = 0.05) {
+    const f = AC.createBiquadFilter(), g = AC.createGain(); f.type = 'lowpass'; f.frequency.setValueAtTime(3000, t); f.frequency.exponentialRampToValueAtTime(900, t + dur);
+    env(g, t, vol, 0.004, dur); f.connect(g); bOut(g);
+    for (const m of ms) for (const det of [-10, 10]) bOsc('sawtooth', m, det, t, dur + 0.05, f);
+  }
+  // 歪んだギター風のパワーコード
+  const bDrive = shaper(6);
+  function bPower(t, root, dur, vol = 0.11) {
+    const ws = AC.createWaveShaper(), f = AC.createBiquadFilter(), g = AC.createGain(), pre = AC.createGain();
+    ws.curve = bDrive; f.type = 'lowpass'; f.frequency.value = 2600; pre.gain.value = 0.5;
+    for (const m of [root, root + 7, root + 12]) for (const det of [-6, 6]) bOsc('sawtooth', m, det, t, dur + 0.03, pre);
+    pre.connect(ws); ws.connect(f); f.connect(g);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.004); g.gain.setValueAtTime(vol, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    bOut(g);
+  }
+  // 曲：4小節（16分×16）の繰り返し。メロディは最初から入る。小節ごとに [16分の位置, 音, 長さ(16分)]
+  const bMel = bars => bars.map(b => { const m = {}; for (const [s, n, l] of b) m[s] = [n, l]; return m; });
+  const BGM_SONGS = [
+    { // ユーロビート：Am F G E。オクターブで跳ねるベースと四つ打ち
+      bpm: 210, roots: [45, 41, 43, 40], chords: [[57, 60, 64], [53, 57, 60], [55, 59, 62], [52, 56, 59]],
+      mel: bMel([
+        [[0, 69, 2], [2, 72, 2], [4, 76, 2], [6, 81, 3], [10, 79, 2], [12, 76, 2], [14, 72, 2]],
+        [[0, 77, 3], [3, 76, 1], [4, 72, 2], [6, 69, 2], [8, 72, 2], [10, 77, 2], [12, 76, 2], [14, 72, 2]],
+        [[0, 74, 2], [2, 79, 2], [4, 74, 2], [6, 71, 2], [8, 74, 2], [10, 79, 3], [13, 81, 1], [14, 83, 2]],
+        [[0, 80, 4], [4, 76, 2], [6, 71, 2], [8, 68, 2], [10, 71, 2], [12, 76, 2], [14, 80, 2]],
+      ]),
+      step(bar, s, t, sd) {
+        if (s === 0 && bar === 0) bCrash(t);
+        if (s % 4 === 0) bKick(t);
+        if (s === 4 || s === 12) bSnare(t);
+        bHat(t, s % 4 === 2 ? 1 : 0.4, s % 4 === 2);
+        if (s % 2 === 0) bBass(t, this.roots[bar] + (s % 4 === 2 ? 12 : 0), sd * 1.8);
+        if (s % 4 === 2) bStab(t, this.chords[bar], sd * 1.5);
+        const n = this.mel[bar][s]; if (n) bLead(t, n[0], n[1] * sd);
+      },
+    },
+    { // ドラムンベース：Dm Bb C A。細かく刻むドラム、うねる低音、駆け上がるアルペジオ
+      bpm: 230, roots: [38, 34, 36, 33], chords: [[62, 65, 69], [58, 62, 65], [60, 64, 67], [57, 61, 64]],
+      step(bar, s, t, sd) {
+        if (s === 0 && bar === 0) bCrash(t);
+        if (s === 0 || s === 10) bKick(t);
+        if (s === 4 || s === 12) bSnare(t); else if (s === 7 || s === 15) bSnare(t, 0.25);
+        bHat(t, s % 2 === 0 ? 0.8 : 0.35, s === 14);
+        if (s === 0 || s === 10) bBass(t, this.roots[bar], sd * 6, true);
+        if (s === 6) bBass(t, this.roots[bar] + 12, sd * 3, true);
+        if (s === 0) bStab(t, this.chords[bar], sd * 14, 0.025);
+        const c = this.chords[bar], seq = [c[0], c[1], c[2], c[0] + 12, c[1] + 12, c[2] + 12, c[0] + 24, c[2] + 12];
+        bPluck(t, seq[s % 8]);
+      },
+    },
+    { // ロック：Em C D B。歪んだギター風の刻みと8ビート
+      bpm: 225, roots: [40, 36, 38, 35],
+      mel: bMel([
+        [[0, 71, 2], [2, 76, 2], [4, 79, 3], [7, 78, 1], [8, 76, 2], [10, 74, 2], [12, 76, 4]],
+        [[0, 76, 2], [2, 79, 2], [4, 84, 3], [7, 83, 1], [8, 79, 2], [10, 76, 2], [12, 79, 4]],
+        [[0, 78, 2], [2, 81, 2], [4, 86, 3], [7, 81, 1], [8, 78, 2], [10, 81, 2], [12, 86, 4]],
+        [[0, 87, 4], [4, 83, 2], [6, 78, 2], [8, 75, 2], [10, 78, 2], [12, 83, 4]],
+      ]),
+      step(bar, s, t, sd) {
+        if (s === 0 && bar === 0) bCrash(t);
+        if (s === 0 || s === 6 || s === 8 || s === 10) bKick(t);
+        if (s === 4 || s === 12) bSnare(t);
+        if (s % 2 === 0) { bHat(t, 0.7); bPower(t, this.roots[bar], sd * (s % 4 === 0 ? 1.8 : 1.2)); bBass(t, this.roots[bar], sd * 1.8); }
+        const n = this.mel[bar][s]; if (n) bLead(t, n[0], n[1] * sd, 'square', 0.1);
+      },
+    },
+  ];
+  // 少し先の音まで予約しておく（タイマーの揺れで音がもたつかないように）
+  let bgmTimer = null;
+  function bgmStart() {
+    if (!AC) return;
+    bgmStop();
+    const song = BGM_SONGS[Math.floor(Math.random() * BGM_SONGS.length)], sd = 60 / song.bpm / 4, t0 = AC.currentTime;
+    let next = t0 + 0.06, i = 0;
+    bgmDly.delayTime.value = sd * 3;
+    bgmGate.gain.setValueAtTime(BGM_VOL, next); // 前の曲の残りは消えてから上げる
+    const tick = () => {
+      // 裏に回るなどしてタイマーが遅れたら、たまった分は鳴らさずに今へ合わせる
+      if (next < AC.currentTime - 0.05) { const k = Math.ceil((AC.currentTime - next) / sd); next += k * sd; i += k; }
+      while (next < AC.currentTime + 0.12) { song.step(Math.floor(i / 16) % 4, i % 16, next, sd); next += sd; i++; }
+    };
+    tick(); bgmTimer = setInterval(tick, 25);
+  }
+  // 止める（予約済みの音は fade 秒ほどで消す）
+  function bgmStop(fade = 0.04) {
+    if (bgmTimer) clearInterval(bgmTimer);
+    bgmTimer = null;
+    if (AC && bgmGate) { const t = AC.currentTime; bgmGate.gain.cancelScheduledValues(t); bgmGate.gain.setTargetAtTime(0, t, fade); }
+  }
   function setSound(v) {
     soundOn = v; $('snd').textContent = v ? '音 オン' : '音 オフ'; $('snd').setAttribute('aria-pressed', String(v));
     if (spk) spk.gain.value = v ? 1 : 0;
@@ -1239,13 +1386,14 @@ const BT = (() => {
     speed = 1; $('ff').textContent = '早送り ×1'; $('ff').hidden = false;
     $('result').hidden = true; $('sharemsg').textContent = '';
     if (solo) sfx.ready(); else sfx.vs();
+    bgmStart();
     recStart();
   }
   const throwWord = p => p >= BT.CRIT_POWER ? '会心!!' : p >= 0.7 ? 'いい投げ！' : p >= 0.4 ? 'まあまあの投げ' : '弱い投げ…';
   // ひとり回しも勝負も、ゲージで投げてから始める
   function beginAim(solo) {
     if (!canSpin(me) || (!solo && !opp)) return;
-    initAudio(); recCancel(); humStop();
+    initAudio(); recCancel(); humStop(); bgmStop();
     // ゲージ中に入力欄を書き換えても、ゲージを出したときの回文で投げる（回せる条件を確かめたもの）
     mode = 'aim'; aim = { t0: performance.now(), solo, text: $('text').value, yomi: $('yomi').value };
     $('ff').hidden = true; $('result').hidden = true;
@@ -1467,7 +1615,7 @@ const BT = (() => {
   /* ---------- 決着後：結果・共有・広告 ---------- */
   function finish() {
     const r = run.res, a = run.mine;
-    humStop(); $('ff').hidden = true;
+    humStop(); bgmStop(0.15); $('ff').hidden = true;
     let head, sub;
     if (run.solo) {
       head = `ばたん！ ${(r.decideFrame * BT.DT).toFixed(1)}秒 回った`; sub = `「${a.text}」（${a.j.kind}・${a.j.score}点）`;
