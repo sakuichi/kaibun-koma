@@ -63,7 +63,7 @@ button,input,textarea{font:inherit;color:inherit}
 .panel{padding:.8rem;border:1.5px solid var(--line);border-radius:1rem;background:var(--surface)}
 .challenge{margin:0 0 .9rem;padding:.8rem;border-radius:1rem;color:#fff;background:linear-gradient(120deg,var(--p2-dark),var(--p2));box-shadow:0 0 0 1.5px var(--p2-glow) inset}
 .challenge[hidden]{display:none}
-.challenge b{font-family:var(--disp);font-weight:400;font-size:1.25rem;display:block;overflow-wrap:anywhere;line-height:1.4}
+.challenge b{font-family:"Stick",var(--body);font-weight:400;font-size:1.25rem;display:block;overflow-wrap:anywhere;line-height:1.4}
 .challenge small{opacity:.85}
 .challenge .score{color:rgba(255,255,255,.85)}
 .stagebox{position:relative;margin-top:.2rem}
@@ -86,6 +86,7 @@ button,input,textarea{font:inherit;color:inherit}
 .sub:disabled{opacity:.45;cursor:not-allowed}
 .entry{margin-top:1rem}
 .entry label.t{display:block;font-weight:700;margin-bottom:.3rem}
+#text,#yomi{font-family:"Stick",var(--body)} /* 回文と読みは、コマの回文と同じ Stick */
 #text{width:100%;padding:.6rem 2.8rem .6rem .7rem;font-size:1.1rem;border:1.5px solid var(--line);border-radius:.7rem;background:var(--surface-2)}
 .field{position:relative}
 .clear{position:absolute;right:.3rem;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:2.2rem;height:2.2rem;border:0;border-radius:50%;background:transparent;color:var(--ink-soft);font-size:1.4rem;line-height:1;cursor:pointer}
@@ -222,7 +223,7 @@ button,input,textarea{font:inherit;color:inherit}
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const SITE_URL = 'https://sakuichi.github.io/kaibun-koma/';
   const DISP = '"Dela Gothic One","Hiragino Sans","Yu Gothic",sans-serif';
-  const STICK = '"Stick","Hiragino Sans","Yu Gothic",sans-serif'; // コマの上面の回文と決まり手
+  const STICK = '"Stick","Hiragino Sans","Yu Gothic",sans-serif'; // 回文を見せる所（コマの上面・VSカード・共有画像・入力欄・挑戦状）
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // 読み辞書を展開（外部通信なし）
@@ -1119,7 +1120,7 @@ button,input,textarea{font:inherit;color:inherit}
     speedLines(W / 2, H * 0.28, Math.min(W, H) * 0.3, 0.22, '#ffffff');
     bigText(draw ? '引き分け' : win ? '勝ち!!' : '負け…', W / 2, H * 0.26, S * 0.34, win || draw ? [C.gold1, C.gold2] : [C['p2-glow'], C.p2], -0.1, s);
     const km = '決まり手：' + res.kimarite;
-    if (t > 0.25) bigText(km, W / 2, H * 0.26 + S * 0.32, Math.min(S * 0.16, W * 0.9 / km.length), '#ffffff', 0, 1, true, STICK);
+    if (t > 0.25) bigText(km, W / 2, H * 0.26 + S * 0.32, Math.min(S * 0.16, W * 0.9 / km.length), '#ffffff', 0, 1, true);
     if (win && !run.confetti && !reduce) {
       run.confetti = true;
       const cols = [C.p1, C.gold2, C.p2, '#ffffff', C.neon];
@@ -1322,8 +1323,8 @@ button,input,textarea{font:inherit;color:inherit}
     const sw = 720, sh = 540; c.drawImage(cv, 30, (IH - sh) / 2, sw, sh);
     c.strokeStyle = C.neon; c.lineWidth = 3; c.strokeRect(30, (IH - sh) / 2, sw, sh);
     const x0 = 790, mw = 370, r = run.res, a = run.mine;
-    // 回文と決まり手は Stick。かぎかっこなど、まだ届いていない文字の分を先に読み込む
-    if (document.fonts && document.fonts.load) await document.fonts.load('400 64px "Stick"', `「${a.text}」決まり手：${r.kimarite}`).catch(() => {});
+    // 回文は Stick。かぎかっこなど、まだ届いていない文字の分を先に読み込む
+    if (document.fonts && document.fonts.load) await document.fonts.load('400 64px "Stick"', `「${a.text}」`).catch(() => {});
     c.fillStyle = '#ffffff'; c.textBaseline = 'alphabetic';
     c.font = `400 34px ${DISP}`; c.fillText('回文ケンカゴマ', x0, 110);
     c.fillStyle = C.neon; c.fillRect(x0, 124, 250, 4);
@@ -1332,7 +1333,7 @@ button,input,textarea{font:inherit;color:inherit}
     const head = run.solo ? `${(r.decideFrame * BT.DT).toFixed(1)}秒` : r.winner === 0 ? '勝ち!!' : r.winner === 1 ? '負け…' : '引き分け';
     const gr = c.createLinearGradient(0, 430, 0, 520); gr.addColorStop(0, C.gold1); gr.addColorStop(1, C.gold2);
     c.font = `400 92px ${DISP}`; c.fillStyle = gr; c.fillText(head, x0, 520);
-    c.font = `400 30px ${run.solo ? DISP : STICK}`; c.fillStyle = '#ffffff';
+    c.font = `400 30px ${DISP}`; c.fillStyle = '#ffffff';
     c.fillText(run.solo ? `回った（${a.j.kind}・${a.j.score}点）` : `決まり手：${r.kimarite}`, x0, 575);
     return new Promise((res, rej) => c0.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/png'));
   }
