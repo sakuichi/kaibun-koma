@@ -617,7 +617,7 @@ button,input,textarea{font:inherit;color:inherit}
   try { soundOn = localStorage.getItem('kaibunkoma-sound') !== '0'; } catch (e) {}
   const shaper = k => { const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } return c; };
   function initAudio() {
-    if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+    if (AC) { if (AC.state !== 'running') AC.resume(); return; } // iOSは共有シートなどの後に "interrupted" になる
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
       const lim = AC.createDynamicsCompressor(); lim.threshold.value = -14; lim.ratio.value = 12; lim.attack.value = 0.003; lim.release.value = 0.2;
