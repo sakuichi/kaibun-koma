@@ -21,7 +21,7 @@
 <link rel="canonical" href="https://sakuichi.github.io/kaibun-koma/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Stick&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#e8ecf4; --surface:#ffffff; --surface-2:#f2f5fa; --ink:#111827; --ink-soft:#4b5875; --line:#c5cee0;
@@ -215,6 +215,7 @@ button,input,textarea{font:inherit;color:inherit}
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const SITE_URL = 'https://sakuichi.github.io/kaibun-koma/';
   const DISP = '"Dela Gothic One","Hiragino Sans","Yu Gothic",sans-serif';
+  const STICK = '"Stick","Hiragino Sans","Yu Gothic",sans-serif'; // コマの上面の回文と決まり手
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // 読み辞書を展開（外部通信なし）
@@ -346,7 +347,7 @@ button,input,textarea{font:inherit;color:inherit}
   function needFont(text) {
     if (!document.fonts || !document.fonts.load || fontAsked.has(text)) return;
     fontAsked.add(text);
-    document.fonts.load('400 40px "Dela Gothic One"', text).then(() => {
+    Promise.all(['Dela Gothic One', 'Stick'].map(f => document.fonts.load(`400 40px "${f}"`, text))).then(() => {
       for (const k of [...texCache.keys()]) if (k.startsWith('text|')) texCache.delete(k);
       arenaCv = null;
     }).catch(() => {});
@@ -357,11 +358,11 @@ button,input,textarea{font:inherit;color:inherit}
     if (texCache.has(key)) return texCache.get(key);
     needFont(meta.lines.join(''));
     const fs = FACE_FS * TEX_PX, lines = meta.lines;
-    const m = document.createElement('canvas').getContext('2d'); m.font = `400 ${fs}px ${DISP}`;
+    const m = document.createElement('canvas').getContext('2d'); m.font = `400 ${fs}px ${STICK}`;
     const pad = fs * 0.45, w = Math.ceil(Math.max(...lines.map(l => m.measureText(l).width)) + pad * 2), h = Math.ceil(lines.length * fs * 1.12 + pad * 2);
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const x = c.getContext('2d');
-    x.font = `400 ${fs}px ${DISP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.lineJoin = 'round';
+    x.font = `400 ${fs}px ${STICK}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.lineJoin = 'round';
     const ys = lines.map((ln, i) => h / 2 + (i - (lines.length - 1) / 2) * fs * 1.12);
     // 自分の色の光のにじみ → 黒い縁 → 白から自分の色へのグラデーション
     x.save(); x.shadowColor = meta.glow; x.shadowBlur = fs * 0.35; x.lineWidth = fs * 0.22; x.strokeStyle = meta.color;
@@ -543,11 +544,12 @@ button,input,textarea{font:inherit;color:inherit}
     g.restore();
   }
   // 大きな文字。斜体にし、fill に [上の色, 下の色] を渡すとグラデーションで塗る
-  function bigText(text, x, y, size, fill, rot, scale) {
+  // thin：小さめの文字向けに、白いフチを付けず黒いフチも細くする（字の中の隙間がフチで埋まってつぶれないように）
+  function bigText(text, x, y, size, fill, rot, scale, thin, font = DISP) {
     g.save(); g.translate(x, y); g.rotate(rot || 0); g.scale(scale || 1, scale || 1); g.transform(1, 0, -0.18, 1, 0, 0);
-    g.font = `400 ${size}px ${DISP}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-    g.lineWidth = size * 0.24; g.strokeStyle = '#05070d'; g.strokeText(text, 0, 0);
-    g.lineWidth = size * 0.09; g.strokeStyle = '#ffffff'; g.strokeText(text, 0, 0);
+    g.font = `400 ${size}px ${font}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.lineWidth = size * (thin ? 0.16 : 0.24); g.strokeStyle = '#05070d'; g.strokeText(text, 0, 0);
+    if (!thin) { g.lineWidth = size * 0.09; g.strokeStyle = '#ffffff'; g.strokeText(text, 0, 0); }
     if (Array.isArray(fill)) { const gr = g.createLinearGradient(0, -size * 0.5, 0, size * 0.5); gr.addColorStop(0, fill[0]); gr.addColorStop(1, fill[1]); g.fillStyle = gr; } else g.fillStyle = fill;
     g.fillText(text, 0, 0);
     g.restore();
@@ -572,9 +574,9 @@ button,input,textarea{font:inherit;color:inherit}
       g.font = `italic 700 ${S * 0.07}px ${DISP}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,255,255,.85)';
       g.fillText(card.label, cx, H * 0.22);
       const lines = card.lines;
-      g.font = `400 100px ${DISP}`;
+      g.font = `400 100px ${STICK}`;
       const mw = Math.max(...lines.map(l => g.measureText(l).width)), fs = Math.min(S * 0.24, 100 * W * 0.36 / mw, H * 0.4 / lines.length / 1.1);
-      lines.forEach((ln, i) => bigText(ln, cx, H * 0.48 + (i - (lines.length - 1) / 2) * fs * 1.1, fs, ['#ffffff', m.glow], 0, 1));
+      lines.forEach((ln, i) => bigText(ln, cx, H * 0.48 + (i - (lines.length - 1) / 2) * fs * 1.1, fs, ['#ffffff', m.glow], 0, 1, false, STICK));
       g.font = `400 ${S * 0.05}px ${DISP}`; g.fillStyle = '#ffffff';
       g.fillText(`${card.kind}　${card.score}点`, cx, H * 0.8);
       g.restore();
@@ -1063,13 +1065,19 @@ button,input,textarea{font:inherit;color:inherit}
     if (run.fh >= 0 && idx >= run.fh - 6 && idx <= run.fh + 24) return 0.3;
     return 1;
   }
+  // 上の小さな文字：明るい土俵の縁に重なっても読めるよう、黒いフチと影を付ける
+  function hudText(text, x, y, size, color) {
+    g.save(); g.font = `400 ${size}px ${DISP}`; g.lineJoin = 'round';
+    g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 6; g.lineWidth = Math.max(3, size * 0.28); g.strokeStyle = '#05070d'; g.strokeText(text, x, y);
+    g.shadowBlur = 0; g.fillStyle = color; g.fillText(text, x, y); g.restore();
+  }
   // 回転メーター：斜めのネオンバー（相手側は右から減る）
   function hud(fr) {
     g.save(); g.textBaseline = 'top';
     run.metas.forEach((m, k) => {
       const w = clamp(fr[k][2], 0, 1), bw = Math.min(150, W * 0.3), x = k === 0 ? 12 : W - 12 - bw, y = 10;
-      g.font = `400 13px ${DISP}`; g.textAlign = k === 0 ? 'left' : 'right'; g.fillStyle = C['stage-ink'];
-      g.fillText((run.labels ? run.labels[k] : '回転') + '  SPIN', k === 0 ? x : x + bw, y);
+      g.textAlign = k === 0 ? 'left' : 'right';
+      hudText((run.labels ? run.labels[k] : '回転') + '  SPIN', k === 0 ? x : x + bw, y, 13, C['stage-ink']);
       const bar = (x0, wd) => { g.beginPath(); g.moveTo(x0 + 6, y + 18); g.lineTo(x0 + wd + 6, y + 18); g.lineTo(x0 + wd, y + 28); g.lineTo(x0, y + 28); g.closePath(); g.fill(); };
       g.fillStyle = 'rgba(255,255,255,.12)'; bar(x, bw);
       g.save(); g.shadowColor = m.glow; g.shadowBlur = 12; g.fillStyle = m.color;
@@ -1078,22 +1086,23 @@ button,input,textarea{font:inherit;color:inherit}
     });
     if (!run.solo) {
       const left = Math.max(0, BT.TMAX - Math.min(lastIdx, run.res.decideFrame) * BT.DT);
-      g.font = `400 20px ${DISP}`; g.textAlign = 'center'; g.fillStyle = C['stage-ink']; g.fillText(String(Math.ceil(left)), W / 2, 8);
+      g.textAlign = 'center'; hudText(String(Math.ceil(left)), W / 2, 8, 22, C['stage-ink']);
     }
-    if (speed > 1 && lastIdx < run.res.decideFrame) { g.font = `400 14px ${DISP}`; g.textAlign = 'center'; g.fillStyle = C.neon; g.fillText('▶▶ ×' + speed, W / 2, run.solo ? 10 : 32); }
+    if (speed > 1 && lastIdx < run.res.decideFrame) { g.textAlign = 'center'; hudText('▶▶ ×' + speed, W / 2, run.solo ? 10 : 34, 14, C.neon); }
     g.restore();
   }
   function resultBanner() {
     const res = run.res, t = run.bannerT, s = reduce ? 1 : t < 0.22 ? 3 - 9.1 * t : 1;
     if (run.solo) {
       bigText('ばたん!', W / 2, H * 0.2, S * 0.26, [C.gold1, C.gold2], -0.08, s);
-      bigText('回った時間 ' + (res.decideFrame * BT.DT).toFixed(1) + '秒', W / 2, H * 0.2 + S * 0.26, S * 0.1, '#ffffff', 0, 1);
+      bigText('回った時間 ' + (res.decideFrame * BT.DT).toFixed(1) + '秒', W / 2, H * 0.2 + S * 0.27, S * 0.14, '#ffffff', 0, 1, true);
       return;
     }
     const win = res.winner === 0, draw = res.winner === -1;
     speedLines(W / 2, H * 0.28, Math.min(W, H) * 0.3, 0.22, '#ffffff');
     bigText(draw ? '引き分け' : win ? '勝ち!!' : '負け…', W / 2, H * 0.26, S * 0.34, win || draw ? [C.gold1, C.gold2] : [C['p2-glow'], C.p2], -0.1, s);
-    if (t > 0.25) bigText('決まり手：' + res.kimarite, W / 2, H * 0.26 + S * 0.3, S * 0.11, '#ffffff', 0, 1);
+    const km = '決まり手：' + res.kimarite;
+    if (t > 0.25) bigText(km, W / 2, H * 0.26 + S * 0.32, Math.min(S * 0.16, W * 0.9 / km.length), '#ffffff', 0, 1, true, STICK);
     if (win && !run.confetti && !reduce) {
       run.confetti = true;
       const cols = [C.p1, C.gold2, C.p2, '#ffffff', C.neon];
@@ -1296,15 +1305,17 @@ button,input,textarea{font:inherit;color:inherit}
     const sw = 720, sh = 540; c.drawImage(cv, 30, (IH - sh) / 2, sw, sh);
     c.strokeStyle = C.neon; c.lineWidth = 3; c.strokeRect(30, (IH - sh) / 2, sw, sh);
     const x0 = 790, mw = 370, r = run.res, a = run.mine;
+    // 回文と決まり手は Stick。かぎかっこなど、まだ届いていない文字の分を先に読み込む
+    if (document.fonts && document.fonts.load) await document.fonts.load('400 64px "Stick"', `「${a.text}」決まり手：${r.kimarite}`).catch(() => {});
     c.fillStyle = '#ffffff'; c.textBaseline = 'alphabetic';
     c.font = `400 34px ${DISP}`; c.fillText('回文ケンカゴマ', x0, 110);
     c.fillStyle = C.neon; c.fillRect(x0, 124, 250, 4);
-    let fs = 64, lines; for (; fs >= 30; fs -= 2) { c.font = `400 ${fs}px ${DISP}`; lines = wrap(c, `「${a.text}」`, mw); if (lines.length <= 3) break; }
+    let fs = 64, lines; for (; fs >= 30; fs -= 2) { c.font = `400 ${fs}px ${STICK}`; lines = wrap(c, `「${a.text}」`, mw); if (lines.length <= 3) break; }
     c.fillStyle = '#ffffff'; lines.slice(0, 3).forEach((ln, i) => c.fillText(ln, x0, 220 + i * fs * 1.25));
     const head = run.solo ? `${(r.decideFrame * BT.DT).toFixed(1)}秒` : r.winner === 0 ? '勝ち!!' : r.winner === 1 ? '負け…' : '引き分け';
     const gr = c.createLinearGradient(0, 430, 0, 520); gr.addColorStop(0, C.gold1); gr.addColorStop(1, C.gold2);
     c.font = `400 92px ${DISP}`; c.fillStyle = gr; c.fillText(head, x0, 520);
-    c.font = `400 30px ${DISP}`; c.fillStyle = '#ffffff';
+    c.font = `400 30px ${run.solo ? DISP : STICK}`; c.fillStyle = '#ffffff';
     c.fillText(run.solo ? `回った（${a.j.kind}・${a.j.score}点）` : `決まり手：${r.kimarite}`, x0, 575);
     return new Promise((res, rej) => c0.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/png'));
   }
