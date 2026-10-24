@@ -398,9 +398,10 @@ const KB = (() => {
   // 長いほど重い（伸びは頭打ち）、厳密なほど長く回る、音の種類が多いほど攻撃が強い（伸びは頭打ち）
   function stats(j) {
     const weight = clamp(0.8 + 0.5 * Math.log2(Math.max(j.n, 3) / 3), 0.8, 3);
-    const endurance = { '成立': 1, 'ゆるめ': 0.75, '手抜き': 0.6, '不成立': 0.35, '短すぎ': 0.3 }[j.kind];
+    // 手抜きは会心で投げてもほぼ勝てない強さ（短い「とまと」にたまに勝つ程度）
+    const endurance = { '成立': 1, 'ゆるめ': 0.75, '手抜き': 0.35, '不成立': 0.35, '短すぎ': 0.3 }[j.kind];
     let attack = 0.3 + 0.9 * (1 - Math.exp(-j.uniq / 6));
-    if (j.kind === '手抜き') attack *= 0.6;
+    if (j.kind === '手抜き') attack *= 0.35;
     return { weight, endurance, attack, radius: RADIUS };
   }
 

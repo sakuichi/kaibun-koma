@@ -106,21 +106,20 @@ test('項目7 相手の投げの強さ oppPower は同じ読みなら同じ値�
   }
 });
 
-function winsOfTenuki(myPower, oppPower) {
+function winsOfTenuki(myPower, oppPower, opp = 'たけやぶやけた') {
   let wins = 0;
   for (let seed = 1; seed <= 40; seed++) {
-    if (vs('あああああ', myPower, 'たけやぶやけた', oppPower, seed).winner === 0) wins++;
+    if (vs('あああああ', myPower, opp, oppPower, seed).winner === 0) wins++;
   }
   return wins;
 }
 
-// 項目7
-test('項目7 手抜きの「あああああ」でも会心で投げれば「たけやぶやけた」に40戦中4勝以上し、0.3で投げたときより勝つ', () => {
-  const opp = BT.oppPower('たけやぶやけた');
-  const crit = winsOfTenuki(BT.CRIT_POWER, opp);
-  const weak = winsOfTenuki(0.3, opp);
-  assert.ok(crit >= 4, `会心での勝ち ${crit} は4以上のはず`);
-  assert.ok(crit > weak, `会心での勝ち ${crit} > 0.3での勝ち ${weak} のはず`);
+// 項目7（2026-10-24 仕様変更：手抜きは会心でもほぼ勝てない）
+test('項目7 手抜きの「あああああ」は会心で投げても「しんぶんし」「たけやぶやけた」「わたしまけましたわ」に40戦中0勝', () => {
+  for (const opp of ['しんぶんし', 'たけやぶやけた', 'わたしまけましたわ']) {
+    const wins = winsOfTenuki(BT.CRIT_POWER, BT.oppPower(opp), opp);
+    assert.equal(wins, 0, `${opp} への会心での勝ち ${wins} は0のはず`);
+  }
 });
 
 // 項目7
