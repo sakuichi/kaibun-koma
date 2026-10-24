@@ -86,7 +86,11 @@ button,input,textarea{font:inherit;color:inherit}
 .sub:disabled{opacity:.45;cursor:not-allowed}
 .entry{margin-top:1rem}
 .entry label.t{display:block;font-weight:700;margin-bottom:.3rem}
-#text{width:100%;padding:.6rem .7rem;font-size:1.1rem;border:1.5px solid var(--line);border-radius:.7rem;background:var(--surface-2)}
+#text{width:100%;padding:.6rem 2.8rem .6rem .7rem;font-size:1.1rem;border:1.5px solid var(--line);border-radius:.7rem;background:var(--surface-2)}
+.field{position:relative}
+.clear{position:absolute;right:.3rem;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:2.2rem;height:2.2rem;border:0;border-radius:50%;background:transparent;color:var(--ink-soft);font-size:1.4rem;line-height:1;cursor:pointer}
+.clear:hover{color:var(--ink);background:var(--surface)}
+#text:placeholder-shown + .clear{display:none} /* 空のときは出さない */
 .yomi{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:.5rem;margin-top:.45rem;font-size:.85rem;font-weight:700;color:var(--ink-soft)}
 #yomi{width:100%;min-width:0;padding:.35rem .6rem;font-size:.95rem;font-weight:500;color:var(--ink);border:1.5px solid var(--line);border-radius:.6rem;background:var(--surface-2)}
 .hint{margin:.4rem 0 0;font-size:.85rem;color:var(--warn);font-weight:700;overflow-wrap:anywhere}
@@ -156,7 +160,10 @@ button,input,textarea{font:inherit;color:inherit}
 
   <section class="entry panel">
     <label class="t" for="text">あなたの回文</label>
-    <input id="text" type="text" maxlength="60" autocomplete="off" placeholder="例：私負けましたわ" enterkeyhint="go">
+    <div class="field">
+      <input id="text" type="text" maxlength="60" autocomplete="off" placeholder="例：私負けましたわ" enterkeyhint="go">
+      <button class="clear" id="clear" type="button" aria-label="回文を消す">×</button>
+    </div>
     <label class="yomi">読み<input id="yomi" type="text" inputmode="kana" autocomplete="off" aria-label="読み（ひらがな）。漢字の読みが違っていたら直せます"></label>
     <p class="hint" id="hint" role="status"></p>
     <div class="judge" id="judge"></div>
@@ -1737,6 +1744,7 @@ const BT = (() => {
   /* ---------- 入力・初期化 ---------- */
   $('text').addEventListener('input', () => { $('yomi').value = dictOk ? RD.autoReading($('text').value).yomi : ''; refresh(); });
   $('yomi').addEventListener('input', refresh);
+  $('clear').addEventListener('click', () => { $('text').value = ''; $('text').dispatchEvent(new Event('input')); $('text').focus(); });
   $('text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); beginAim(!opp); } });
   document.querySelectorAll('[data-try]').forEach(b => b.addEventListener('click', () => {
     $('text').value = b.dataset.try; $('yomi').value = dictOk ? RD.autoReading(b.dataset.try).yomi : ''; refresh();
