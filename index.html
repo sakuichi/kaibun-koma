@@ -872,6 +872,7 @@ const BT = (() => {
   /* ---------- 演出 ---------- */
   const BIG = ['ガキィン!!', 'ドゴォッ!!', 'バチィッ!!', 'ズガァン!!', 'ギャリリッ!!', 'ドカァッ!!'];
   let mode = 'idle', run = null, aim = null, simT = 0, hitStop = 0, lastIdx = -1, last = null, speed = 1;
+  try { speed = [1, 2, 4].includes(+localStorage.getItem('kaibunkoma-ff')) ? +localStorage.getItem('kaibunkoma-ff') : 1; } catch (e) {} // 早送りは前回の倍率を引き継ぐ
   let sparks = [], rings = [], words = [], confetti = [], glows = [], flash = 0, shake = 0, aberr = 0;
   const cam = { z: 1, x: 0, y: 0, tz: 1, tx: 0, ty: 0, hold: 0 };
   function resetFx() {
@@ -1406,7 +1407,7 @@ const BT = (() => {
       trails: metas.map(() => []), fh: res.hits.length ? res.hits[0].f : -1, power: specs[0].power };
     mode = 'run'; simT = 0; lastIdx = -1; resetFx();
     if (cards) cards.forEach(c => needFont(c.lines.join('')));
-    speed = 1; $('ff').textContent = '早送り ×1'; $('ff').hidden = false;
+    $('ff').textContent = '早送り ×' + speed; $('ff').hidden = false;
     $('result').hidden = true; $('sharemsg').textContent = '';
     if (solo) sfx.ready(); else sfx.vs();
     bgmStart();
@@ -1764,7 +1765,10 @@ const BT = (() => {
   cv.addEventListener('pointerdown', throwNow);
   document.addEventListener('keydown', e => { if (e.code === 'Space' && mode === 'aim') { e.preventDefault(); throwNow(); } });
   $('again').addEventListener('click', () => { if (last && canSpin(me)) { initAudio(); $('gauge').hidden = true; showStage(); play(last); } });
-  $('ff').addEventListener('click', () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; $('ff').textContent = '早送り ×' + speed; });
+  $('ff').addEventListener('click', () => {
+    speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; $('ff').textContent = '早送り ×' + speed;
+    try { localStorage.setItem('kaibunkoma-ff', String(speed)); } catch (e) {}
+  });
   $('snd').addEventListener('click', () => { initAudio(); setSound(!soundOn); });
   $('saveImg').addEventListener('click', saveImage);
   $('saveVid').addEventListener('click', saveVideo);
